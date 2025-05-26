@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contract_db}
+      POSTGRES_USER: ${POSTGRES_USER:-contract_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contract_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-contract_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI бэкенд
+  backend:
+    build: ./backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-contract_user}:${POSTGRES_PASSWORD:-contract_password}@db/${POSTGRES_DB:-contract_db}
+      - SECRET_KEY=${SECRET_KEY:-your_default_secret_key_change_it}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin_password}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://your-domain.ru}
+      - DADATA_TOKEN=${DADATA_TOKEN:-your_dadata_token}
+      - DADATA_SECRET=${DADATA_SECRET:-your_dadata_secret}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - ${GOOGLE_CREDENTIALS_PATH:-./credentials.json}:/app/credentials.json:ro
+
+  # Vue.js фронтенд
+  frontend:
+    build: ./frontend
+    restart: always
+    depends_on:
+      - backend
+
+  # Nginx прокси-сервер
+  nginx:
+    image: nginx:stable-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+      - frontend
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/letsencrypt:/var/www/letsencrypt:ro
+      - letsencrypt_data:/etc/letsencrypt
+
+volumes:
+  postgres_data:
+  letsencrypt_data:
